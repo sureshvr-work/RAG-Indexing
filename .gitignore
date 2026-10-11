@@ -1,0 +1,39 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+.aws/
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Downloaded data, embeddings, indexes, and benchmark output
+datasets/raw/**
+datasets/processed/**
+datasets/synthetic/**
+results/benchmarks/**
+results/charts/**
+!.gitkeep
+.cache/
+cache/
+*.npy
+*.npz
+*.faiss
+*.index
+
+# Local database and container storage
+volumes/
+
+# Editor and operating system files
+.DS_Store
+.idea/
+.vscode/
