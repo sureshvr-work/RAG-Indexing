@@ -1,0 +1,26 @@
+# Python 3.11+; local CPU embeddings and vector search.
+# NumPy resolves to a release compatible with your Python version.
+
+# Embeddings and data processing
+sentence-transformers==6.1.0
+numpy>=2.2,<3
+pandas==3.0.6
+
+# API and dashboard
+fastapi==0.143.0
+httpx>=0.28,<1
+pydantic>=2,<3
+uvicorn[standard]==0.54.0
+streamlit==1.65.0
+plotly==7.1.0
+
+# Vector search backends (PostgreSQL and Qdrant servers run in Docker)
+faiss-cpu==1.15.1
+psycopg[binary]==3.3.6
+pgvector==0.5.1
+qdrant-client==1.19.1
+
+# Configuration and tests
+PyYAML==6.0.3
+python-dotenv==1.2.4
+pytest==9.1.1

@@ -20,6 +20,7 @@ dist/
 datasets/raw/**
 datasets/processed/**
 datasets/synthetic/**
+datasets/indexes/**
 results/benchmarks/**
 results/charts/**
 !.gitkeep

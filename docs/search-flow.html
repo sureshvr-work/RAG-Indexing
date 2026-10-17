@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="The local RAG Indexing Lab search flow: one query embedding shared by FAISS, PostgreSQL with pgvector, and Qdrant.">
+<title>Search flow · RAG Indexing Lab</title>
+<style>
+:root { color-scheme: light; --page:#f3f5f8; --surface:#fff; --text:#14233b; --muted:#53647a; --border:#d9e1ea; --line:#9baabd; --accent:#245fe0; --soft:#eef4ff; --code:#173e85; --shadow:0 3px 14px rgb(21 42 76 / 4%); }
+:root[data-theme="dark"] { color-scheme:dark; --page:#101723; --surface:#182232; --text:#edf3fc; --muted:#b1bed0; --border:#334258; --line:#61718a; --accent:#8bb0ff; --soft:#203552; --code:#b4cbff; --shadow:none; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--text); font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; line-height:1.5; }
+main { max-width:1200px; margin:auto; padding:42px 32px 48px; }
+header { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:28px; }
+.eyebrow { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+h1 { font-size:clamp(28px,4vw,42px); line-height:1.15; letter-spacing:-.035em; margin:8px 0 12px; }
+.subtitle { margin:0; max-width:690px; color:var(--muted); }
+.actions { display:flex; gap:8px; flex-wrap:wrap; padding-top:8px; }
+button { font:inherit; border:1px solid var(--border); border-radius:8px; padding:8px 13px; color:var(--text); background:var(--surface); cursor:pointer; }
+button:hover { border-color:var(--accent); }
+button:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+button[aria-pressed="true"] { background:var(--accent); color:var(--surface); border-color:var(--accent); }
+:root[data-theme="dark"] button[aria-pressed="true"] { color:#101723; }
+.toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; padding:16px 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin-bottom:30px; }
+.route-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.route-label,.tag { font-size:12px; font-weight:650; color:var(--muted); }
+.route-label { margin-right:4px; }
+.tag { letter-spacing:.02em; }
+.diagram { position:relative; isolation:isolate; }
+.connections { position:absolute; inset:0; width:100%; height:100%; z-index:-1; overflow:visible; pointer-events:none; color:var(--line); }
+.edge { fill:none; stroke:var(--line); stroke-width:1.7; }
+.stage { display:flex; justify-content:center; margin-bottom:48px; }
+.node { background:var(--surface); border:1px solid var(--border); border-radius:11px; padding:16px 19px; box-shadow:var(--shadow); min-width:0; transition:opacity .16s; }
+.stage>.node { width:min(100%,540px); text-align:center; }
+.node h2,.node h3 { margin:4px 0 5px; font-size:17px; font-weight:720; line-height:1.35; letter-spacing:-.015em; overflow-wrap:anywhere; }
+.node p { overflow-wrap:anywhere; margin:6px 0 0; color:var(--muted); font-size:13px; }
+.node code { display:inline-block; color:var(--code); font:12.5px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.node .step { display:block; color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
+.node.prominent { border-color:var(--accent); background:var(--soft); }
+.query { font-size:21px; font-weight:650; letter-spacing:-.015em; }
+.entry-grid,.output-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px; max-width:850px; margin:0 auto 48px; }
+.entry-lane { display:grid; gap:35px; }
+.entry-lane .node,.output-grid .node { text-align:center; }
+.backends { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; margin-bottom:48px; }
+.backend-lane { display:grid; grid-template-rows:100px 100px 116px 100px 100px; gap:32px; }
+.backend-lane .node { text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 13px; }
+.backend-lane .node>* { max-width:100%; }
+.backend-lane h3 { font-size:16px; }
+.backend-lane .backend-title h2 { font-size:20px; }
+.output-grid { margin-bottom:0; }
+body[data-route="cli"] .node[data-route="ui"],body[data-route="ui"] .node[data-route="cli"] { opacity:.3; }
+body[data-route="cli"] .edge[data-route="ui"],body[data-route="ui"] .edge[data-route="cli"] { opacity:.2; }
+footer { margin-top:34px; border-top:1px solid var(--border); padding-top:20px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; color:var(--muted); font-size:13px; }
+footer strong { color:var(--text); font-weight:650; }
+footer p { margin:4px 0 0; }
+.sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@media(max-width:760px) { main { padding:24px 16px 32px; } header { flex-direction:column; gap:12px; } .backends { gap:10px; } .backend-lane { grid-template-rows:150px 220px 230px 200px 230px; gap:28px; } .backend-lane .node { padding:10px 7px; } .backend-lane h3 { font-size:14px; } .backend-lane .node p { font-size:12px; } .backend-lane .node code { font-size:11px; } .backend-lane .backend-title h2 { font-size:15px; } .entry-grid,.output-grid { gap:14px; } .node { padding:14px 12px; } footer { grid-template-columns:1fr; gap:14px; } }
+@media(prefers-reduced-motion:reduce) { .node { transition:none; } }
+@media print { :root, :root[data-theme="dark"] { --page:#fff; --surface:#fff; --text:#14233b; --muted:#53647a; --border:#bac5d3; --line:#7b8da4; --accent:#245fe0; --soft:#eef4ff; --code:#173e85; --shadow:none; } @page { size:A3 portrait; margin:10mm; } main { padding:0; max-width:none; } .actions,.toolbar { display:none; } header { margin-bottom:20px; } .node { break-inside:avoid; } body[data-route] .node,body[data-route] .edge { opacity:1; } footer { break-inside:avoid; } }
+</style>
+</head>
+<body data-route="all">
+<main>
+<header>
+  <div><div class="eyebrow">RAG Indexing Lab / Architecture</div><h1>One query. Three search backends.</h1><p class="subtitle">Follow the exact-search path from a natural-language query to documents, cosine similarity scores, and per-search evaluation.</p></div>
+  <div class="actions"><button id="theme" type="button" aria-label="Switch color theme">Dark theme</button><button id="print" type="button">Print diagram</button></div>
+</header>
+<div class="toolbar">
+  <div class="route-controls" role="group" aria-label="Highlight an entry route"><span class="route-label">Highlight route</span><button type="button" data-select-route="all" aria-pressed="true">Both</button><button type="button" data-select-route="cli" aria-pressed="false">Terminal</button><button type="button" data-select-route="ui" aria-pressed="false">Streamlit UI</button></div>
+  <span class="tag">Exact cosine search · 384 dimensions</span>
+</div>
+<div id="diagram" class="diagram" aria-label="Search architecture flow diagram">
+<svg id="connections" class="connections" aria-hidden="true"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="currentColor" stroke-width="1.5"/></marker></defs><g id="edges"></g></svg>
+<div class="stage"><article class="node prominent" id="query"><span class="step">01 / Query</span><h2>User query</h2><div class="query">“cancer immunotherapy”</div><p>Same text, regardless of the chosen backend.</p></article></div>
+<div class="entry-grid">
+  <div class="entry-lane"><article class="node" id="terminal" data-route="cli"><span class="step">02 / Entry point</span><h3>Terminal</h3><code>scripts/search.py</code></article><article class="node" id="retrieval" data-route="cli"><h3>RetrievalService</h3><code>RetrievalService.search()</code><p>Opens the selected local stores.</p></article></div>
+  <div class="entry-lane"><article class="node" id="ui" data-route="ui"><span class="step">02 / Entry point</span><h3>Streamlit UI</h3><code>POST /search → FastAPI</code></article><article class="node" id="lab" data-route="ui"><h3>LabService</h3><code>LabService.search()</code><p>Handles backend selection and filters.</p></article></div>
+</div>
+<div class="stage"><article class="node" id="embedding"><span class="step">03 / Embed once</span><h3>EmbeddingService.encode_query()</h3><code>sentence-transformers/all-MiniLM-L6-v2</code><p>The same pinned model used to embed the documents.</p></article></div>
+<div class="stage"><article class="node prominent" id="vector"><span class="step">04 / Shared query vector</span><h3>One normalized 384-D vector</h3><p>Send this vector to each selected backend.</p><code>store.search(vector, top_k, filters)</code></article></div>
+<div class="backends">
+  <section class="backend-lane" aria-label="FAISS search path">
+    <article class="node backend-title" id="faiss"><span class="step">05 / Backend</span><h2>FAISS</h2><p>Python library call in a local worker</p></article>
+    <article class="node" id="faiss-filter"><h3>Filter document mapping</h3><p>If filters are supplied, select eligible vectors before ranking.</p></article>
+    <article class="node" id="faiss-search"><h3>Search Flat index</h3><code>index.search(query_vector, k)</code><p>IndexIDMap2(IndexFlatIP)</p></article>
+    <article class="node" id="faiss-results"><h3>IDs + scores</h3><p>Normalized inner product gives cosine similarity.</p></article>
+    <article class="node" id="faiss-docs"><h3>Load document text</h3><p>Resolve IDs through the separate document and metadata mapping.</p></article>
+  </section>
+  <section class="backend-lane" aria-label="PostgreSQL search path">
+    <article class="node backend-title" id="postgres"><span class="step">05 / Backend</span><h2>PostgreSQL</h2><p>Parameterized SQL with pgvector</p></article>
+    <article class="node" id="postgres-filter"><h3>Apply WHERE filters</h3><p>SQL conditions select eligible rows using metadata.</p></article>
+    <article class="node" id="postgres-search"><h3>Order by cosine distance</h3><code>ORDER BY embedding &lt;=&gt; query_vector<br>LIMIT k</code></article>
+    <article class="node" id="postgres-results"><h3>Rows + scores</h3><p>Rows include document text and metadata.</p></article>
+    <article class="node" id="postgres-docs"><h3>Convert to similarity</h3><code>score = 1 − cosine_distance</code><p>Higher scores mean more similar.</p></article>
+  </section>
+  <section class="backend-lane" aria-label="Qdrant search path">
+    <article class="node backend-title" id="qdrant"><span class="step">05 / Backend</span><h2>Qdrant</h2><p>Client request to the local API</p></article>
+    <article class="node" id="qdrant-filter"><h3>Apply payload filters</h3><p>Native conditions on metadata fields select eligible points.</p></article>
+    <article class="node" id="qdrant-search"><h3>Query collection</h3><code>query_points()<br>SearchParams(exact=True)</code></article>
+    <article class="node" id="qdrant-results"><h3>Points + payloads</h3><p>Cosine scores, IDs, and document payloads.</p></article>
+    <article class="node" id="qdrant-docs"><h3>Extract document fields</h3><p>Read text and metadata from each returned point’s payload.</p></article>
+  </section>
+</div>
+<div class="stage"><article class="node prominent" id="common"><span class="step">06 / Common response</span><h3>SearchResult</h3><p>Documents · cosine similarity scores · backend search timing</p><p>Per-search Precision@K and Recall@K with explicit references</p></article></div>
+<div class="output-grid"><article class="node" id="terminal-output" data-route="cli"><span class="step">07 / Display</span><h3>Terminal output</h3><p>Ranked documents, scores, timing, and metrics.</p></article><article class="node" id="ui-output" data-route="ui"><span class="step">07 / Display</span><h3>Side-by-side UI results</h3><p>Compare backends and inspect text, metadata, and metrics.</p></article></div>
+</div>
+<footer>
+  <div><strong>Filter scope</strong><p>The dashboard/API supports metadata filters. The current terminal command searches without filters. Each backend applies filters before selecting its exact top-K results.</p></div>
+  <div><strong>Evaluation scope</strong><p>Exact-neighbor metrics compare with NumPy. Relevance metrics use SciFact’s labeled queries and the relevant documents available in the filtered sample. Unlabeled relevance is shown as N/A.</p></div>
+</footer>
+<p id="route-status" class="sr-only" aria-live="polite">Both entry routes are highlighted.</p>
+</main>
+<script>
+(() => {
+  const root = document.getElementById('diagram');
+  const svg = document.getElementById('connections');
+  const edges = document.getElementById('edges');
+  const connections = [
+    ['query','terminal','cli'],['query','ui','ui'],['terminal','retrieval','cli'],['ui','lab','ui'],
+    ['retrieval','embedding','cli'],['lab','embedding','ui'],['embedding','vector','shared'],
+    ['vector','faiss','shared'],['vector','postgres','shared'],['vector','qdrant','shared'],
+    ['faiss','faiss-filter','shared'],['faiss-filter','faiss-search','shared'],['faiss-search','faiss-results','shared'],['faiss-results','faiss-docs','shared'],
+    ['postgres','postgres-filter','shared'],['postgres-filter','postgres-search','shared'],['postgres-search','postgres-results','shared'],['postgres-results','postgres-docs','shared'],
+    ['qdrant','qdrant-filter','shared'],['qdrant-filter','qdrant-search','shared'],['qdrant-search','qdrant-results','shared'],['qdrant-results','qdrant-docs','shared'],
+    ['faiss-docs','common','shared'],['postgres-docs','common','shared'],['qdrant-docs','common','shared'],
+    ['common','terminal-output','cli'],['common','ui-output','ui']
+  ];
+  function draw() {
+    const bounds = root.getBoundingClientRect();
+    svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+    edges.replaceChildren();
+    for (const [from,to,route] of connections) {
+      const start = document.getElementById(from).getBoundingClientRect();
+      const end = document.getElementById(to).getBoundingClientRect();
+      const x1 = start.left + start.width/2 - bounds.left, y1 = start.bottom - bounds.top + 1;
+      const x2 = end.left + end.width/2 - bounds.left, y2 = end.top - bounds.top - 3;
+      const mid = (y1+y2)/2;
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', `M ${x1} ${y1} V ${mid} H ${x2} V ${y2}`);
+      path.setAttribute('class','edge'); path.setAttribute('data-route',route); path.setAttribute('marker-end','url(#arrow)');
+      edges.append(path);
+    }
+  }
+  for (const button of document.querySelectorAll('[data-select-route]')) {
+    button.addEventListener('click', () => {
+      const route = button.dataset.selectRoute; document.body.dataset.route = route;
+      for (const peer of document.querySelectorAll('[data-select-route]')) peer.setAttribute('aria-pressed', String(peer === button));
+      document.getElementById('route-status').textContent = route === 'all' ? 'Both entry routes are highlighted.' : `${route === 'cli' ? 'Terminal' : 'Streamlit UI'} entry route is highlighted.`;
+    });
+  }
+  document.getElementById('theme').addEventListener('click', () => {
+    const dark = document.documentElement.dataset.theme !== 'dark';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.getElementById('theme').textContent = dark ? 'Light theme' : 'Dark theme';
+  });
+  document.getElementById('print').addEventListener('click', () => window.print());
+  new ResizeObserver(draw).observe(root);
+  document.fonts.ready.then(draw);
+  window.addEventListener('beforeprint',draw);
+  draw();
+})();
+</script>
+</body>
+</html>
